@@ -35,6 +35,7 @@ The author and people associated with him are not responsible for the inoperabil
 * Configuring printer poweroff timeout
 * Configuring paper type, paper back-feed and P90 print speed
 * Full 16-bit image height in raw image frames
+* Proper end-of-job command (`10fffe45`) so the printer returns to idle
 * Supported printers:
   * Peripage A6
   * Peripage A6+
