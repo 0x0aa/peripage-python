@@ -122,7 +122,7 @@ class Printer:
         """
 
         for i in text:
-            if (31 < ord(i) or ord(i) == 10) and ord(i) < 127:
+            if not ((31 < ord(i) or ord(i) == 10) and ord(i) < 127):
                 return False
         return True
 
