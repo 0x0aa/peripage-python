@@ -1109,7 +1109,7 @@ class Printer:
         img = img.resize((self.getRowWidth(), int(self.getRowWidth() / img.size[0] * img.size[1])), resample)
         return img.convert('1')
 
-    def printImage(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None, finish: bool=True) -> None:
+    def printImage(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None, finish: bool=True, lead_in: int=0) -> None:
         """
         Print PIL Image on this printer with automatic internal to-blackwhite
         conversion.
@@ -1127,17 +1127,24 @@ class Printer:
         `1f00` frame. `None` selects it automatically from the printer spec
         (A40/A40+ use it by default).
         * `finish` - send the end-of-job command after the image.
+        * `lead_in` - number of blank rows to prepend. Useful on printers that
+          clip the first few dots at the start of a print.
         """
 
         if compressed is None:
             compressed = self.printer_type.spec.compressed
 
         img = self._prepareImage(img, resample)
+        imgbytes = img.tobytes()
+
+        lead_in = max(0, lead_in)
+        if lead_in > 0:
+            imgbytes = (b'\0' * (self.getRowBytes() * lead_in)) + imgbytes
 
         if compressed:
-            self.printCompressedBytes(img.tobytes(), finish=finish)
+            self.printCompressedBytes(imgbytes, finish=finish)
         else:
-            self.printImageBytes(img.tobytes(), finish=finish)
+            self.printImageBytes(imgbytes, finish=finish)
 
     def printImageIterator(self, imgiterator: typing.Iterable[PIL.Image.Image]):
         """
@@ -1150,7 +1157,7 @@ class Printer:
         for img in imgiterator:
             self.printImage(img)
 
-    def printQR(self, text: str, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None, finish: bool=True) -> None:
+    def printQR(self, text: str, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None, finish: bool=True, lead_in: int=0) -> None:
         """
         Generate a QR code from specified string and print it.
 
@@ -1161,6 +1168,7 @@ class Printer:
         * `compressed` - force/disable the compressed `1f00` image frame.
         `None` selects it automatically from the printer spec.
         * `finish` - send the end-of-job command after the image.
+        * `lead_in` - number of blank rows to prepend.
         """
 
-        self.printImage(qrcode.make(text, border=0), resample=resample, compressed=compressed, finish=finish)
+        self.printImage(qrcode.make(text, border=0), resample=resample, compressed=compressed, finish=finish, lead_in=lead_in)

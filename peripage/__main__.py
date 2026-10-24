@@ -76,6 +76,13 @@ def main():
         type=int,
         default=None
     )
+    parser.add_argument(
+        '--lead-in',
+        help='Prepend N blank rows to image/QR jobs (helps if the printer clips the first dots)',
+        metavar='N',
+        type=int,
+        default=0
+    )
 
     compress_group = parser.add_mutually_exclusive_group()
     compress_group.add_argument(
@@ -228,7 +235,7 @@ def main():
             sys.exit(1)
 
         finish_after_image = (args.break_size == 0)
-        printer.printImage(img, compressed=args.compressed, finish=finish_after_image)
+        printer.printImage(img, compressed=args.compressed, finish=finish_after_image, lead_in=args.lead_in)
 
         if args.break_size > 0:
             printer.printBreak(args.break_size)
@@ -244,7 +251,7 @@ def main():
         apply_printer_options()
 
         finish_after_image = (args.break_size == 0)
-        printer.printQR(args.qr, compressed=args.compressed, finish=finish_after_image)
+        printer.printQR(args.qr, compressed=args.compressed, finish=finish_after_image, lead_in=args.lead_in)
 
         if args.break_size > 0:
             printer.printBreak(args.break_size)

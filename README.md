@@ -142,7 +142,7 @@ Install module and run
 $ python -m peripage -h
 usage: __main__.py [-h] -m MAC [-c [0-2]] [-b [0-255]] -p {A6,A6p,A40,A40p}
                    [--paper-type [0-4]] [--speed [0-9]] [--feed-back [0-120]]
-                   [--compressed | --no-compress]
+                   [--lead-in N] [--compressed | --no-compress]
                    (-t TEXT | -s | -i IMAGE | -q QR | -e | --status | --battery)
 
 Print on a Peripage printer via bluetooth
@@ -160,6 +160,8 @@ options:
                         mark, 2=gap label, 3=page, 4=tattoo)
   --speed [0-9]         Set P90-family print speed before printing (0-9)
   --feed-back [0-120]   Back-feed paper by N dots before printing (0-120)
+  --lead-in N           Prepend N blank rows to image/QR jobs (helps if the
+                        printer clips the first dots)
   --compressed          Force compressed image transfer (default for A40/A40+)
   --no-compress         Force raw row-by-row image transfer (fallback/debug)
   -t TEXT, --text TEXT  ASCII text to print. Text must be ASCII-safe and will
@@ -315,6 +317,16 @@ printer.finishPrint()         # finish current job
 Image printing writes data in 1024-byte blocks and waits for a printer
 acknowledgement (`OK` or `0xAA`) instead of sleeping after every row. This
 matches the Android client and is paced by Bluetooth backpressure.
+
+### Image lead-in
+
+Some printers clip the first few dots when an image starts at row 0. Prepend
+blank rows without editing the source image:
+
+```bash
+python -m peripage -m 00:15:83:15:bc:5f -p A6p \
+  -i image.png --lead-in 4
+```
 
 ## Printer disassembly
 
