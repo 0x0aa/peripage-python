@@ -1005,7 +1005,7 @@ class Printer:
         for chunk in rowiterator:
             self.printRowBytesList(chunk)
 
-    def printImageBytes(self, imagebytes: bytes) -> None:
+    def printImageBytes(self, imagebytes: bytes, finish: bool=True) -> None:
         """
         Send an bytes representing single-line encoded image. For example,
         `[0xff000000, 0x00ff0000, 0x0000ff00, 0x000000ff]` is encoded as
@@ -1021,6 +1021,7 @@ class Printer:
         row must be aligned to `Printer.getRowBytes()` in order to display
         properly. If length of the last row dows not match
         `Printer.getRowBytes()`, data is truncated/padded to match the size.
+        * `finish` - send the end-of-job command after the image.
         """
 
         if len(imagebytes) == 0:
@@ -1028,9 +1029,11 @@ class Printer:
 
         # Delegate to impl
         self.printRowBytesList([ imagebytes[i:i+self.getRowBytes()] for i in range(0, len(imagebytes), self.getRowBytes()) ])
-        self.finishPrint()
 
-    def printCompressedBytes(self, imagebytes: bytes) -> None:
+        if finish:
+            self.finishPrint()
+
+    def printCompressedBytes(self, imagebytes: bytes, finish: bool=True) -> None:
         """
         Send raw 1-bpp row data using the compressed `1f00` image frame.
 
@@ -1044,6 +1047,7 @@ class Printer:
 
         Arguments:
         * `imagebytes` - concatenated 1-bpp rows, each `getRowBytes()` long.
+        * `finish` - send the end-of-job command after the image.
         """
 
         if not imagebytes:
@@ -1075,9 +1079,10 @@ class Printer:
             self._sendBlocks(request)
             self._waitForPrintDone()
 
-        self.finishPrint()
+        if finish:
+            self.finishPrint()
 
-    def printImageCompressed(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST) -> None:
+    def printImageCompressed(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST, finish: bool=True) -> None:
         """
         Print a PIL image using the compressed image frame.
 
@@ -1087,10 +1092,11 @@ class Printer:
         Arguments:
         * `img` - image to print.
         * `resample` - resampling mode used while scaling to printer width.
+        * `finish` - send the end-of-job command after the image.
         """
 
         img = self._prepareImage(img, resample)
-        self.printCompressedBytes(img.tobytes())
+        self.printCompressedBytes(img.tobytes(), finish=finish)
 
     def _prepareImage(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST) -> PIL.Image.Image:
         """
@@ -1103,7 +1109,7 @@ class Printer:
         img = img.resize((self.getRowWidth(), int(self.getRowWidth() / img.size[0] * img.size[1])), resample)
         return img.convert('1')
 
-    def printImage(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None) -> None:
+    def printImage(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None, finish: bool=True) -> None:
         """
         Print PIL Image on this printer with automatic internal to-blackwhite
         conversion.
@@ -1120,6 +1126,7 @@ class Printer:
         * `compressed` - force (`True`) or disable (`False`) the compressed
         `1f00` frame. `None` selects it automatically from the printer spec
         (A40/A40+ use it by default).
+        * `finish` - send the end-of-job command after the image.
         """
 
         if compressed is None:
@@ -1128,9 +1135,9 @@ class Printer:
         img = self._prepareImage(img, resample)
 
         if compressed:
-            self.printCompressedBytes(img.tobytes())
+            self.printCompressedBytes(img.tobytes(), finish=finish)
         else:
-            self.printImageBytes(img.tobytes())
+            self.printImageBytes(img.tobytes(), finish=finish)
 
     def printImageIterator(self, imgiterator: typing.Iterable[PIL.Image.Image]):
         """
@@ -1143,7 +1150,7 @@ class Printer:
         for img in imgiterator:
             self.printImage(img)
 
-    def printQR(self, text: str, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None) -> None:
+    def printQR(self, text: str, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None, finish: bool=True) -> None:
         """
         Generate a QR code from specified string and print it.
 
@@ -1153,6 +1160,7 @@ class Printer:
         rescale image to fit the printer width of `Printer.getRowWidth()`.
         * `compressed` - force/disable the compressed `1f00` image frame.
         `None` selects it automatically from the printer spec.
+        * `finish` - send the end-of-job command after the image.
         """
 
-        self.printImage(qrcode.make(text, border=0), resample=resample, compressed=compressed)
+        self.printImage(qrcode.make(text, border=0), resample=resample, compressed=compressed, finish=finish)

@@ -227,10 +227,12 @@ def main():
             printer.disconnect()
             sys.exit(1)
 
-        printer.printImage(img, compressed=args.compressed)
+        finish_after_image = (args.break_size == 0)
+        printer.printImage(img, compressed=args.compressed, finish=finish_after_image)
 
         if args.break_size > 0:
             printer.printBreak(args.break_size)
+            printer.finishPrint()
 
         printer.disconnect()
 
@@ -241,10 +243,12 @@ def main():
         printer.setConcentration(args.concentration)
         apply_printer_options()
 
-        printer.printQR(args.qr, compressed=args.compressed)
+        finish_after_image = (args.break_size == 0)
+        printer.printQR(args.qr, compressed=args.compressed, finish=finish_after_image)
 
         if args.break_size > 0:
             printer.printBreak(args.break_size)
+            printer.finishPrint()
 
         printer.disconnect()
 
