@@ -140,11 +140,12 @@ Install module and run
 
 ```
 $ python -m peripage -h
-usage: __main__.py [-h] -m MAC [-c [0-2]] [-b [0-255]] -p {A6,A6p,A40,A40p} (-t TEXT | -s | -i IMAGE | -q QR | -e)
+usage: __main__.py [-h] -m MAC [-c [0-2]] [-b [0-255]] -p {A6,A6p,A40,A40p}
+                   (-t TEXT | -s | -i IMAGE | -q QR | -e | --status | --battery)
 
 Print on a Peripage printer via bluetooth
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   -m MAC, --mac MAC     Bluetooth MAC address of the printer
   -c [0-2], --concentration [0-2]
@@ -153,12 +154,18 @@ optional arguments:
                         Size of the break inserted after printed image or text
   -p {A6,A6p,A40,A40p}, --printer {A6,A6p,A40,A40p}
                         Printer model selection
-  -t TEXT, --text TEXT  ASCII text to print. Text must be ASCII-safe and will be filtered for invalid characters
-  -s, --stream          Print text received from STDIN, line by line. Text must be ASCII-safe and will be filtered for invalid characters
+  -t TEXT, --text TEXT  ASCII text to print. Text must be ASCII-safe and will
+                        be filtered for invalid characters
+  -s, --stream          Print text received from STDIN, line by line. Text
+                        must be ASCII-safe and will be filtered for invalid
+                        characters
   -i IMAGE, --image IMAGE
                         Path to the image for printing
   -q QR, --qr QR        String to convert into a QR code for printing
   -e, --introduce       Ask the printer to introduce itself
+  --status              Query printer status (cover, paper, printing, low-
+                        battery flag)
+  --battery             Query printer battery percentage
 ```
 
 ### Print image example
@@ -281,6 +288,19 @@ printer.disconnect()
 
 A40/A40+ default to `compressed=True`. A6/A6+ keep the raw row-based path. To
 force the old path on a newer printer, pass `compressed=False`.
+
+### Status and paper helpers
+
+```python
+print(printer.getDeviceModel().decode('ascii', 'replace'))
+status = printer.getDeviceStatus()
+print(printer.parseDeviceStatus(status))
+
+printer.setPaperType(0)       # continuous paper
+printer.feedBack(40)          # back-feed 40 dots
+printer.setPrintSpeed(2)      # P90-family speed byte
+printer.finishPrint()         # finish current job
+```
 
 ## Printer disassembly
 

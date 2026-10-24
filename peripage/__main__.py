@@ -79,6 +79,16 @@ def main():
         help='Ask the printer to introduce itself',
         action='store_true'
     )
+    group.add_argument(
+        '--status',
+        help='Query printer status (cover, paper, printing, low-battery flag)',
+        action='store_true'
+    )
+    group.add_argument(
+        '--battery',
+        help='Query printer battery percentage',
+        action='store_true'
+    )
 
     args = parser.parse_args()
 
@@ -88,7 +98,28 @@ def main():
     printer.reset()
 
     # Act based on args
-    if 'introduce' in args and args.introduce:
+    if 'status' in args and args.status:
+
+        status = printer.getDeviceStatus()
+        print(f'status: {status.hex()}')
+        print(f'state:  {peripage.Printer.parseDeviceStatus(status)}')
+        printer.disconnect()
+        sys.exit(0)
+
+    elif 'battery' in args and args.battery:
+
+        try:
+            battery = printer.getDeviceBattery()
+            print(f'battery: {battery}%')
+        except Exception as e:
+            print(f'Failed to read battery: {e!r}')
+            printer.disconnect()
+            sys.exit(1)
+
+        printer.disconnect()
+        sys.exit(0)
+
+    elif 'introduce' in args and args.introduce:
 
         # print('Hello, my name is Harold..')
         print(printer.getDeviceFull().decode('ascii'))
