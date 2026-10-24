@@ -583,6 +583,19 @@ class Printer:
         paper_type = min(4, max(0, paper_type))
         self.tellPrinter(bytes.fromhex('10ff1003') + int.to_bytes(paper_type, 1, 'big'))
 
+    def setPrintSpeed(self, speed: int) -> None:
+        """
+        Set the print speed of P90-family printers.
+
+        Request: `10ffc0+bytes[1]`.
+
+        Arguments:
+        * `speed` - print speed from `0` to `9`.
+        """
+
+        speed = min(9, max(0, speed))
+        self.tellPrinter(bytes.fromhex('10ffc0') + int.to_bytes(speed, 1, 'big'))
+
     def printBreak(self, size: int=0x40) -> None:
         """
         Ask printer to print out a break of fixed size.
