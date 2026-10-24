@@ -28,7 +28,7 @@ The author and people associated with him are not responsible for the inoperabil
 * Printing Images row-by row using binary row representation
 * Printing page breaks using paper feed
 * Printing using generator/iterator that return bytes for each row, chunks of bytes for each row, images
-* Requesting printer details (Serial Number, Name, Battery Level, Hardware Info and an option the meaning of which i don't know)
+* Requesting printer details (Serial Number, Name, Battery Level, Hardware Info, Model, Bluetooth module info)
 * Requesting printer status (cover, paper, printing, low battery)
 * Configuring print concentration (temperature)
 * Changing printer serial number

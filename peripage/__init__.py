@@ -265,18 +265,49 @@ class Printer:
             self.sock.send(s)
         return self.sock.recv(recv_size)
 
-    def getDeviceIP(self) -> bytes:
+    def getDeviceModel(self) -> bytes:
         """
-        Query Unknown Property.
+        Query the printer model string.
 
         Request: `10ff20f0`.
 
-        Response: `bytes` with unknown property.
+        Response: `bytes` with model name.
 
         Example: Peripage A6+ returns `IP-300`.
+
+        Note: this command was previously exposed as `getDeviceIP()`, but the
+        Android client uses it for the model name.
         """
 
         return self.askPrinter(bytes.fromhex('10ff20f0'))
+
+    def getDeviceIP(self) -> bytes:
+        """
+        Deprecated alias of `getDeviceModel()`.
+
+        The A6+ answer `IP-300` is a model / firmware platform identifier, not
+        an IP address.
+        """
+
+        return self.getDeviceModel()
+
+    def getDeviceBluetoothName(self) -> bytes:
+        """
+        Query the Bluetooth module name.
+
+        Request: `10ff3101`.
+        """
+
+        return self.askPrinter(bytes.fromhex('10ff3101'))
+
+    def getDeviceBluetoothVersion(self) -> bytes:
+        """
+        Query the Bluetooth module version.
+
+        Request: `10ff3103`.
+        """
+
+        return self.askPrinter(bytes.fromhex('10ff3103'))
 
     def getDeviceName(self) -> bytes:
         """
