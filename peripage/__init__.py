@@ -295,6 +295,9 @@ class Printer:
                 if b'\xaa' in data:
                     return True
 
+                if b'OK' in data:
+                    return True
+
             return False
         finally:
             try:
