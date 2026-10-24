@@ -33,6 +33,11 @@ import PIL.Image
 import PIL.ImageOps
 
 
+# Safety cap for waiting on the printer acknowledgement. This is not a user
+# pacing option; image data is already paced by Bluetooth backpressure.
+PRINT_ACK_TIMEOUT = 10.0
+
+
 class PrinterTypeSpecs:
     """
     Specification parameters for each printer model. required for unifying the
@@ -132,7 +137,7 @@ class Printer:
                 return False
         return True
 
-    def __init__(self, mac: str, printer_type: PrinterType, timeout: float=1.0):
+    def __init__(self, mac: str, printer_type: PrinterType, timeout: float=1.0, block_size: int=1024):
         """
         Create instance of peripage connector. `mac` and `printer_type` are
         required for bluetooth connection and printer-specific printing
@@ -145,11 +150,13 @@ class Printer:
         * `mac` - mac address of the printer
         * `printer_type` - printer type enum with specification
         * `timeout` - socket connection timeout in seconds
+        * `block_size` - image write block size
         """
 
         self.mac = mac
         self.timeout = timeout
         self.printer_type = printer_type
+        self.block_size = block_size
 
         # buffer used for continuous printing with line wrapping
         self.print_buffer = ''
@@ -246,6 +253,54 @@ class Printer:
         """
 
         return self.sock.recv(recv_size)
+
+    def _sendBlocks(self, data: bytes) -> None:
+        """
+        Write `data` in `block_size` blocks without fixed per-row delays.
+
+        This mirrors the Android client, which writes image frames in 1024-byte
+        chunks and relies on RFCOMM backpressure plus the printer completion
+        marker instead of sleeping after every row.
+        """
+
+        total = len(data)
+
+        for offset in range(0, total, self.block_size):
+            block = data[offset:offset + self.block_size]
+            self.tellPrinter(block)
+
+    def _waitForPrintDone(self) -> bool:
+        """
+        Wait for the printer's acknowledgement (`OK` or `0xAA`).
+
+        Returns `True` when an acknowledgement is seen and `False` on the
+        internal safety timeout.
+        """
+
+        deadline = time.monotonic() + PRINT_ACK_TIMEOUT
+        previous_timeout = self.timeout
+
+        try:
+            self.sock.settimeout(0.2)
+
+            while time.monotonic() < deadline:
+                try:
+                    data = self.sock.recv(256)
+                except Exception:
+                    continue
+
+                if not data:
+                    continue
+
+                if b'\xaa' in data:
+                    return True
+
+            return False
+        finally:
+            try:
+                self.sock.settimeout(previous_timeout)
+            except Exception:
+                pass
 
     def tellPrinterSeq(self, byteseq: typing.Iterable[bytes]) -> None:
         """
@@ -838,7 +893,7 @@ class Printer:
             self.print_buffer = ''
             time.sleep(delay)
 
-    def printRow(self, rowbytes: bytes, delay: float=0.01) -> None:
+    def printRow(self, rowbytes: bytes) -> None:
         """
         Send bytes representing a single image row in binary black/white mode.
         If amount of bydes exceedes the `Printer.getRowBytes()` constant, input
@@ -855,7 +910,6 @@ class Printer:
         Arguments:
         * `rowbytes` - bytes representing image pixels, 8 pixels per byte,
         truncated/padded to fit `Printer.getRowBytes()`.
-        * `delay` - delay between printing each row of the image.
         """
 
         expectedLen = self.getRowBytes()
@@ -869,11 +923,9 @@ class Printer:
         # Notify printer about incomming $expectedLen bytes row
         request = bytes.fromhex('1d763000') + int.to_bytes(self.getRowBytes(), 1, 'big') + bytes.fromhex('000100') + rowbytes
         self.tellPrinter(request)
-        time.sleep(delay)
+        self._waitForPrintDone()
 
-        # We're done here
-
-    def printRowBytesList(self, rowbytes: typing.Iterable[bytes], delay: float=0.01) -> None:
+    def printRowBytesList(self, rowbytes: typing.Iterable[bytes]) -> None:
         """
         Send an array of bytes representing a multiple image rows in binary
         black/white mode. If amount of bydes per row exceedes the
@@ -895,7 +947,6 @@ class Printer:
         * `rowbytes` - list of bytes defining each row of the image. If row
         length does not match the `Printer.getRowBytes()`, data is
         truncated/padded to match the size.
-        * `delay` - delay between printing each row of the image.
         """
 
         if len(rowbytes) == 0:
@@ -913,22 +964,15 @@ class Printer:
             # preamble: operation + bytes-per-row:le16 + height:le16
             request = bytes.fromhex('1d763000') + int.to_bytes(self.getRowBytes(), 1, 'big') + bytes.fromhex('00') + int.to_bytes(len(chunk), 2, 'little')
 
-            # Flush preamble
-            self.tellPrinter(request)
+            payload = b''.join(
+                (row[:expectedLen] if len(row) > expectedLen else row.ljust(expectedLen, b'\0'))
+                for row in chunk
+            )
 
-            # Flush rows dith delay
-            for row in chunk:
-                # trunc/pad
-                if len(row) < expectedLen:
-                    row = row.ljust(expectedLen, b'\0')
-                elif len(row) > expectedLen:
-                    row = row[:expectedLen]
+            self._sendBlocks(request + payload)
+            self._waitForPrintDone()
 
-                self.tellPrinter(row)
-
-                time.sleep(delay)
-
-    def printRowBytesIterator(self, rowiterator: typing.Iterable[bytes], delay: float=0.01) -> None:
+    def printRowBytesIterator(self, rowiterator: typing.Iterable[bytes]) -> None:
         """
         Iterate over the given iterator and print out all produced rows. This
         method is very slow as it required printer to oftenly switch on/off
@@ -938,13 +982,12 @@ class Printer:
 
         Arguments:
         * `rowiterator` - iterator that returns bytes.
-        * `delay` - delay between printing each row of the image.
         """
 
         for r in rowiterator:
-            self.printRow(r, delay=delay)
+            self.printRow(r)
 
-    def printRowChunksIterator(self, rowiterator: typing.Iterable[typing.List[bytes]], delay: float=0.01) -> None:
+    def printRowChunksIterator(self, rowiterator: typing.Iterable[typing.List[bytes]]) -> None:
         """
         Iterate over the given iterator and print out all produced chunks of
         rows. One chunk of rows is a list of bytes where each bytes define the
@@ -954,13 +997,12 @@ class Printer:
 
         Arguments:
         * `rowiterator` - iterator that returns list[bytes].
-        * `delay` - delay between printing each row of the image.
         """
 
         for chunk in rowiterator:
-            self.printRowBytesList(chunk, delay=delay)
+            self.printRowBytesList(chunk)
 
-    def printImageBytes(self, imagebytes: bytes, delay: float=0.01) -> None:
+    def printImageBytes(self, imagebytes: bytes) -> None:
         """
         Send an bytes representing single-line encoded image. For example,
         `[0xff000000, 0x00ff0000, 0x0000ff00, 0x000000ff]` is encoded as
@@ -976,17 +1018,16 @@ class Printer:
         row must be aligned to `Printer.getRowBytes()` in order to display
         properly. If length of the last row dows not match
         `Printer.getRowBytes()`, data is truncated/padded to match the size.
-        * `delay` - delay between printing each row of the image.
         """
 
         if len(imagebytes) == 0:
             return
 
         # Delegate to impl
-        self.printRowBytesList([ imagebytes[i:i+self.getRowBytes()] for i in range(0, len(imagebytes), self.getRowBytes()) ], delay=delay)
+        self.printRowBytesList([ imagebytes[i:i+self.getRowBytes()] for i in range(0, len(imagebytes), self.getRowBytes()) ])
         self.finishPrint()
 
-    def printCompressedBytes(self, imagebytes: bytes, delay: float=0.05) -> None:
+    def printCompressedBytes(self, imagebytes: bytes) -> None:
         """
         Send raw 1-bpp row data using the compressed `1f00` image frame.
 
@@ -1000,7 +1041,6 @@ class Printer:
 
         Arguments:
         * `imagebytes` - concatenated 1-bpp rows, each `getRowBytes()` long.
-        * `delay` - delay after each compressed frame.
         """
 
         if not imagebytes:
@@ -1029,12 +1069,12 @@ class Printer:
                 + payload
 
             self.reset()
-            self.tellPrinter(request)
-            time.sleep(delay)
+            self._sendBlocks(request)
+            self._waitForPrintDone()
 
         self.finishPrint()
 
-    def printImageCompressed(self, img: PIL.Image.Image, delay: float=0.05, resample=PIL.Image.Resampling.NEAREST) -> None:
+    def printImageCompressed(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST) -> None:
         """
         Print a PIL image using the compressed image frame.
 
@@ -1043,12 +1083,11 @@ class Printer:
 
         Arguments:
         * `img` - image to print.
-        * `delay` - delay after each compressed frame.
         * `resample` - resampling mode used while scaling to printer width.
         """
 
         img = self._prepareImage(img, resample)
-        self.printCompressedBytes(img.tobytes(), delay=delay)
+        self.printCompressedBytes(img.tobytes())
 
     def _prepareImage(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST) -> PIL.Image.Image:
         """
@@ -1061,7 +1100,7 @@ class Printer:
         img = img.resize((self.getRowWidth(), int(self.getRowWidth() / img.size[0] * img.size[1])), resample)
         return img.convert('1')
 
-    def printImage(self, img: PIL.Image.Image, delay=0.01, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None) -> None:
+    def printImage(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None) -> None:
         """
         Print PIL Image on this printer with automatic internal to-blackwhite
         conversion.
@@ -1073,8 +1112,6 @@ class Printer:
 
         Arguments:
         * `img` - your pretty PIL Image.
-        * `delay` - delay between printing each row (raw mode) or after each
-        compressed frame.
         * `resample` - resampling mode of the image, used to automatically
         rescale image to fit the printer width of `Printer.getRowWidth()`.
         * `compressed` - force (`True`) or disable (`False`) the compressed
@@ -1088,33 +1125,31 @@ class Printer:
         img = self._prepareImage(img, resample)
 
         if compressed:
-            self.printCompressedBytes(img.tobytes(), delay=delay)
+            self.printCompressedBytes(img.tobytes())
         else:
-            self.printImageBytes(img.tobytes(), delay=delay)
+            self.printImageBytes(img.tobytes())
 
-    def printImageIterator(self, imgiterator: typing.Iterable[PIL.Image.Image], delay: float=0.01):
+    def printImageIterator(self, imgiterator: typing.Iterable[PIL.Image.Image]):
         """
         Iterate over iterator and print out each PIL Image that it returns.
 
         Arguments:
         * `rowiterator` - iterator that returns list[bytes].
-        * `delay` - delay between printing each row of the image.
         """
 
         for img in imgiterator:
-            self.printImage(img, delay=delay)
+            self.printImage(img)
 
-    def printQR(self, text: str, delay: float=0.01, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None) -> None:
+    def printQR(self, text: str, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None) -> None:
         """
         Generate a QR code from specified string and print it.
 
         Arguments:
         * `text` - your pretty text.
-        * `delay` - delay between printing each row of the image.
         * `resample` - resampling mode of the image, used to automatically
         rescale image to fit the printer width of `Printer.getRowWidth()`.
         * `compressed` - force/disable the compressed `1f00` image frame.
         `None` selects it automatically from the printer spec.
         """
 
-        self.printImage(qrcode.make(text, border=0), delay=delay, resample=resample, compressed=compressed)
+        self.printImage(qrcode.make(text, border=0), resample=resample, compressed=compressed)

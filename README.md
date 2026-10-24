@@ -310,6 +310,12 @@ printer.setPrintSpeed(2)      # P90-family speed byte
 printer.finishPrint()         # finish current job
 ```
 
+### Image print pacing
+
+Image printing writes data in 1024-byte blocks and waits for a printer
+acknowledgement (`OK` or `0xAA`) instead of sleeping after every row. This
+matches the Android client and is paced by Bluetooth backpressure.
+
 ## Printer disassembly
 
 [Disassembly for A6+](https://imgur.com/a/6LLwuaD)
