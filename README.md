@@ -32,6 +32,7 @@ The author and people associated with him are not responsible for the inoperabil
 * Configuring print concentration (temperature)
 * Changing printer serial number
 * Configuring printer poweroff timeout
+* Configuring paper type and paper back-feed
 * Supported printers:
   * Peripage A6
   * Peripage A6+

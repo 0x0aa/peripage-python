@@ -555,6 +555,34 @@ class Printer:
 
         self.tellPrinter(bytes.fromhex('1d0c'))
 
+    def feedBack(self, dots: int=32) -> None:
+        """
+        Back the paper up by `dots` dots (used to compensate for paper pulled
+        forward when a job starts).
+
+        Request: `10ff81+bytes[1]`.
+
+        Arguments:
+        * `dots` - number of dots, clamped to `0..120`.
+        """
+
+        dots = min(120, max(0, dots))
+        self.tellPrinter(bytes.fromhex('10ff81') + int.to_bytes(dots, 1, 'big'))
+
+    def setPaperType(self, paper_type: int) -> None:
+        """
+        Select the loaded paper type.
+
+        Request: `10ff1003+bytes[1]`.
+
+        Arguments:
+        * `paper_type` - paper type: `0` continuous, `1` black mark, `2` gap
+          label, `3` page, `4` tattoo.
+        """
+
+        paper_type = min(4, max(0, paper_type))
+        self.tellPrinter(bytes.fromhex('10ff1003') + int.to_bytes(paper_type, 1, 'big'))
+
     def printBreak(self, size: int=0x40) -> None:
         """
         Ask printer to print out a break of fixed size.
