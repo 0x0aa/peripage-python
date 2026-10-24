@@ -874,16 +874,16 @@ class Printer:
         `Printer.getRowBytes()` constant, input is truncated. If size of input
         is under the `Printer.getRowBytes()`, it will be padded with zeros.
 
-        This printer supports pages up to `0xffff` rows, but current
-        implementation relies on chunked data with height limit of `0xff` and
-        automatically slices the input into chunks.
+        The image header carries a 16-bit height, so the input is sliced into
+        chunks of at most `0xffff` rows. Each chunk gets a fresh `reset()`.
 
-        Note: In case of A6+, preamble is `1d76300048000100` that can be viewed
-        as `[ 1d7630, 0030, 0001 ]`, where `1d7630` is printing operation
-        request, `0030` is big endian bytes per row, `0001` is big endian input
-        height.
+        Note: the preamble is
+        `1d 76 30 <mode> <row_bytes:le16> <height:le16>`, where `1d7630` is the
+        printing operation request, `mode` is 0 for normal printing and
+        `row_bytes` is `Printer.getRowBytes()`. The Android client also uses
+        modes 1..3 for its faster image paths.
 
-        Request: chunked `1d763000+bytes[1]:big_endian+00+bytes[1]:big_endian+00+bytes[Printer.getRowBytes()*chunk_height]`.
+        Request: chunked `1d763000+bytes[1]:big_endian+00+bytes[2]:little_endian+bytes[Printer.getRowBytes()*chunk_height]`.
 
         Arguments:
         * `rowbytes` - list of bytes defining each row of the image. If row
@@ -896,16 +896,16 @@ class Printer:
             return
 
         expectedLen = self.getRowBytes()
-        chunks = [ rowbytes[i:i+0xff] for i in range(0, len(rowbytes), 0xff) ]
+        chunks = [ rowbytes[i:i+0xffff] for i in range(0, len(rowbytes), 0xffff) ]
 
         for chunk in chunks:
 
             # Reset state before print
             self.reset()
 
-            #                 1d763000    30                    00    01                     00
-            # Send preamble: `1d763000` + row_bytes:bytes[1] + `00` + chunk_size:bytes[1] + `00`
-            request = bytes.fromhex('1d763000') + int.to_bytes(self.getRowBytes(), 1, 'big') + bytes.fromhex('00') + int.to_bytes(len(chunk), 1, 'big') + bytes.fromhex('00')
+            #          1d763000    30                    00     height:le16
+            # preamble: operation + bytes-per-row:le16 + height:le16
+            request = bytes.fromhex('1d763000') + int.to_bytes(self.getRowBytes(), 1, 'big') + bytes.fromhex('00') + int.to_bytes(len(chunk), 2, 'little')
 
             # Flush preamble
             self.tellPrinter(request)

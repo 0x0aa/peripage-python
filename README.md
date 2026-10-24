@@ -34,6 +34,7 @@ The author and people associated with him are not responsible for the inoperabil
 * Changing printer serial number
 * Configuring printer poweroff timeout
 * Configuring paper type, paper back-feed and P90 print speed
+* Full 16-bit image height in raw image frames
 * Supported printers:
   * Peripage A6
   * Peripage A6+
