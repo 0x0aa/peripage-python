@@ -52,6 +52,45 @@ def main():
         type=str,
         required=True
     )
+    parser.add_argument(
+        '--paper-type',
+        help='Set paper type before printing (0=continuous, 1=black mark, 2=gap label, 3=page, 4=tattoo)',
+        choices=range(5),
+        metavar='[0-4]',
+        type=int,
+        default=None
+    )
+    parser.add_argument(
+        '--speed',
+        help='Set P90-family print speed before printing (0-9)',
+        choices=range(10),
+        metavar='[0-9]',
+        type=int,
+        default=None
+    )
+    parser.add_argument(
+        '--feed-back',
+        help='Back-feed paper by N dots before printing (0-120)',
+        choices=range(121),
+        metavar='[0-120]',
+        type=int,
+        default=None
+    )
+
+    compress_group = parser.add_mutually_exclusive_group()
+    compress_group.add_argument(
+        '--compressed',
+        dest='compressed',
+        help='Force compressed image transfer (default for A40/A40+)',
+        action='store_true',
+        default=None
+    )
+    compress_group.add_argument(
+        '--no-compress',
+        dest='compressed',
+        help='Force raw row-by-row image transfer (fallback/debug)',
+        action='store_false'
+    )
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -97,6 +136,16 @@ def main():
     printer.connect()
     printer.reset()
 
+    def apply_printer_options():
+        if args.paper_type is not None:
+            printer.setPaperType(args.paper_type)
+
+        if args.speed is not None:
+            printer.setPrintSpeed(args.speed)
+
+        if args.feed_back is not None:
+            printer.feedBack(args.feed_back)
+
     # Act based on args
     if 'status' in args and args.status:
 
@@ -129,6 +178,7 @@ def main():
     elif 'stream' in args and args.stream:
 
         printer.setConcentration(args.concentration)
+        apply_printer_options()
 
         while True:
             try:
@@ -150,6 +200,7 @@ def main():
     elif 'text' in args and args.text is not None:
 
         printer.setConcentration(args.concentration)
+        apply_printer_options()
 
         text = args.text.rstrip()
 
@@ -167,13 +218,14 @@ def main():
     elif 'image' in args and args.image is not None:
 
         printer.setConcentration(args.concentration)
+        apply_printer_options()
 
         try:
             img = PIL.Image.open(args.image)
         except:
             print(f'Failed to open image { args.image }')
 
-        printer.printImage(img)
+        printer.printImage(img, compressed=args.compressed)
 
         if args.break_size > 0:
             printer.printBreak(args.break_size)
@@ -185,8 +237,9 @@ def main():
     elif 'qr' in args and args.qr is not None:
 
         printer.setConcentration(args.concentration)
+        apply_printer_options()
 
-        printer.printQR(args.qr)
+        printer.printQR(args.qr, compressed=args.compressed)
 
         if args.break_size > 0:
             printer.printBreak(args.break_size)

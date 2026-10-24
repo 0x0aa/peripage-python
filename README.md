@@ -141,6 +141,8 @@ Install module and run
 ```
 $ python -m peripage -h
 usage: __main__.py [-h] -m MAC [-c [0-2]] [-b [0-255]] -p {A6,A6p,A40,A40p}
+                   [--paper-type [0-4]] [--speed [0-9]] [--feed-back [0-120]]
+                   [--compressed | --no-compress]
                    (-t TEXT | -s | -i IMAGE | -q QR | -e | --status | --battery)
 
 Print on a Peripage printer via bluetooth
@@ -154,6 +156,12 @@ options:
                         Size of the break inserted after printed image or text
   -p {A6,A6p,A40,A40p}, --printer {A6,A6p,A40,A40p}
                         Printer model selection
+  --paper-type [0-4]    Set paper type before printing (0=continuous, 1=black
+                        mark, 2=gap label, 3=page, 4=tattoo)
+  --speed [0-9]         Set P90-family print speed before printing (0-9)
+  --feed-back [0-120]   Back-feed paper by N dots before printing (0-120)
+  --compressed          Force compressed image transfer (default for A40/A40+)
+  --no-compress         Force raw row-by-row image transfer (fallback/debug)
   -t TEXT, --text TEXT  ASCII text to print. Text must be ASCII-safe and will
                         be filtered for invalid characters
   -s, --stream          Print text received from STDIN, line by line. Text
