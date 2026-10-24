@@ -503,10 +503,57 @@ class Printer:
         connect/reconnect. Without this operation, printer will not print nor
         return any data.
 
+        This is the combined form of `wake()` (`10fffe01`) and
+        `resetBuffer()` (twelve zero bytes), which the Android client sends as
+        two separate writes before every print job.
+
         Request: `10fffe01+000000000000000000000000`.
         """
 
         self.tellPrinter(bytes.fromhex('10fffe01000000000000000000000000'))
+
+    def wake(self) -> None:
+        """
+        Wake / unlock the printer engine.
+
+        Request: `10fffe01`.
+
+        The Android client sends this before `resetBuffer()` and the image
+        data. `reset()` already contains the same bytes.
+        """
+
+        self.tellPrinter(bytes.fromhex('10fffe01'))
+
+    def resetBuffer(self) -> None:
+        """
+        Clear the in-printer image buffer (twelve zero bytes).
+
+        The Android client sends this immediately after `wake()` and before
+        each image.
+        """
+
+        self.tellPrinter(bytes(12))
+
+    def finishPrint(self) -> None:
+        """
+        Finish the current print job.
+
+        Request: `10fffe45`.
+
+        The Android client sends this after an image has been transferred, so
+        the printer can return to idle and flush its internal state.
+        """
+
+        self.tellPrinter(bytes.fromhex('10fffe45'))
+
+    def positionPaper(self) -> None:
+        """
+        Advance/position the paper after an image (used by label modes).
+
+        Request: `1d0c`.
+        """
+
+        self.tellPrinter(bytes.fromhex('1d0c'))
 
     def printBreak(self, size: int=0x40) -> None:
         """
