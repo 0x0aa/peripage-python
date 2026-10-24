@@ -224,6 +224,8 @@ def main():
             img = PIL.Image.open(args.image)
         except:
             print(f'Failed to open image { args.image }')
+            printer.disconnect()
+            sys.exit(1)
 
         printer.printImage(img, compressed=args.compressed)
 
