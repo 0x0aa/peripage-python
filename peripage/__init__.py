@@ -596,6 +596,49 @@ class Printer:
         speed = min(9, max(0, speed))
         self.tellPrinter(bytes.fromhex('10ffc0') + int.to_bytes(speed, 1, 'big'))
 
+    def getDeviceStatus(self) -> bytes:
+        """
+        Query the printer status.
+
+        Request: `10ff40`.
+
+        Response: two bytes. The first byte is a bit field:
+        * `0x10` - cover opened
+        * `0x08` - printing
+        * `0x04` - battery low
+        * `0x01` - no paper
+
+        Use `Printer.parseDeviceStatus()` to turn the first byte into text.
+        """
+
+        return self.askPrinter(bytes.fromhex('10ff40'))
+
+    @staticmethod
+    def parseDeviceStatus(status: bytes) -> str:
+        """
+        Convert the first status byte returned by `getDeviceStatus()` into a
+        human-readable string. Returns `Unknown` for an empty response.
+        """
+
+        if not status:
+            return 'Unknown'
+
+        flags = status[0]
+        if flags == 0:
+            return 'OK'
+
+        states = []
+        if flags & 0x10:
+            states.append('CoverOpened')
+        if flags & 0x01:
+            states.append('NoPaper')
+        if flags & 0x08:
+            states.append('Printing')
+        if flags & 0x04:
+            states.append('BatteryLow')
+
+        return '|'.join(states) if states else 'Unknown(0x%02x)' % flags
+
     def printBreak(self, size: int=0x40) -> None:
         """
         Ask printer to print out a break of fixed size.
