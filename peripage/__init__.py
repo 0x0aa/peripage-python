@@ -23,6 +23,7 @@ __copyright__ = 'Copyright (c) GPLv3 2021-2023 bitrate16 (pegasko)'
 
 
 import time
+import zlib
 import qrcode
 import typing
 import enum
@@ -41,12 +42,15 @@ class PrinterTypeSpecs:
     * `row_bytes` - bytes per row encoding
     * `row_width` - width of single row in pixels
     * `row_characters` - width of row in ASCII-mode characters
+    * `compressed` - whether the model accepts the compressed `1f00` image
+      frame (raw deflate stream produced by the vendor `libCode.so`)
     """
 
-    def __init__(self, row_bytes: int, row_width: int, row_characters: int):
+    def __init__(self, row_bytes: int, row_width: int, row_characters: int, compressed: bool=False):
         self.row_bytes = row_bytes
         self.row_width = row_width
         self.row_characters = row_characters
+        self.compressed = compressed
 
 class PrinterType(enum.Enum):
     """
@@ -69,13 +73,15 @@ class PrinterType(enum.Enum):
     A40 = PrinterTypeSpecs(
         row_bytes=216,
         row_width=1728,
-        row_characters=144
+        row_characters=144,
+        compressed=True
     )
 
     A40p = PrinterTypeSpecs(
         row_bytes=231,
         row_width=1848,
-        row_characters=154
+        row_characters=154,
+        compressed=True
     )
 
     @classmethod
@@ -980,7 +986,82 @@ class Printer:
         self.printRowBytesList([ imagebytes[i:i+self.getRowBytes()] for i in range(0, len(imagebytes), self.getRowBytes()) ], delay=delay)
         self.finishPrint()
 
-    def printImage(self, img: PIL.Image.Image, delay=0.01, resample=PIL.Image.Resampling.NEAREST) -> None:
+    def printCompressedBytes(self, imagebytes: bytes, delay: float=0.05) -> None:
+        """
+        Send raw 1-bpp row data using the compressed `1f00` image frame.
+
+        This is the fast path used by the current Android client for A40,
+        A40+, A9, P40 and other newer models. The payload is a normal zlib
+        stream with its two-byte zlib header removed, which is exactly what
+        the vendor `libCode.so::code()` produces.
+
+        Frame layout:
+        `1f 00 <row_bytes:be16> <height:be16> <payload_len:be32> <payload>`
+
+        Arguments:
+        * `imagebytes` - concatenated 1-bpp rows, each `getRowBytes()` long.
+        * `delay` - delay after each compressed frame.
+        """
+
+        if not imagebytes:
+            return
+
+        expected_len = self.getRowBytes()
+        if len(imagebytes) % expected_len != 0:
+            padded_len = ((len(imagebytes) + expected_len - 1) // expected_len) * expected_len
+            imagebytes = imagebytes.ljust(padded_len, b'\0')
+
+        total_rows = len(imagebytes) // expected_len
+        if total_rows == 0:
+            return
+
+        for row_start in range(0, total_rows, 0xffff):
+            row_count = min(0xffff, total_rows - row_start)
+            chunk = imagebytes[row_start * expected_len:(row_start + row_count) * expected_len]
+
+            compressed = zlib.compress(chunk, 6)
+            payload = compressed[2:]
+
+            request = bytes.fromhex('1f00') \
+                + int.to_bytes(expected_len, 2, 'big') \
+                + int.to_bytes(row_count, 2, 'big') \
+                + int.to_bytes(len(payload), 4, 'big') \
+                + payload
+
+            self.reset()
+            self.tellPrinter(request)
+            time.sleep(delay)
+
+        self.finishPrint()
+
+    def printImageCompressed(self, img: PIL.Image.Image, delay: float=0.05, resample=PIL.Image.Resampling.NEAREST) -> None:
+        """
+        Print a PIL image using the compressed image frame.
+
+        This is automatically selected by `printImage()` for printer types
+        whose specification has `compressed=True`.
+
+        Arguments:
+        * `img` - image to print.
+        * `delay` - delay after each compressed frame.
+        * `resample` - resampling mode used while scaling to printer width.
+        """
+
+        img = self._prepareImage(img, resample)
+        self.printCompressedBytes(img.tobytes(), delay=delay)
+
+    def _prepareImage(self, img: PIL.Image.Image, resample=PIL.Image.Resampling.NEAREST) -> PIL.Image.Image:
+        """
+        Convert an arbitrary PIL image to the printer's 1-bpp, MSB-first row
+        format, scaled to `Printer.getRowWidth()`.
+        """
+
+        img = img.convert('L')
+        img = PIL.ImageOps.invert(img)
+        img = img.resize((self.getRowWidth(), int(self.getRowWidth() / img.size[0] * img.size[1])), resample)
+        return img.convert('1')
+
+    def printImage(self, img: PIL.Image.Image, delay=0.01, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None) -> None:
         """
         Print PIL Image on this printer with automatic internal to-blackwhite
         conversion.
@@ -992,18 +1073,24 @@ class Printer:
 
         Arguments:
         * `img` - your pretty PIL Image.
-        * `delay` - delay between printing each row of the image.
+        * `delay` - delay between printing each row (raw mode) or after each
+        compressed frame.
         * `resample` - resampling mode of the image, used to automatically
         rescale image to fit the printer width of `Printer.getRowWidth()`.
+        * `compressed` - force (`True`) or disable (`False`) the compressed
+        `1f00` frame. `None` selects it automatically from the printer spec
+        (A40/A40+ use it by default).
         """
 
-        img = img.convert('L')
-        img = PIL.ImageOps.invert(img)
-        img = img.resize((self.getRowWidth(), int(self.getRowWidth() / img.size[0] * img.size[1])), resample)
-        img = img.convert('1')
+        if compressed is None:
+            compressed = self.printer_type.spec.compressed
 
-        imgbytes = img.tobytes()
-        self.printImageBytes(imgbytes, delay=delay)
+        img = self._prepareImage(img, resample)
+
+        if compressed:
+            self.printCompressedBytes(img.tobytes(), delay=delay)
+        else:
+            self.printImageBytes(img.tobytes(), delay=delay)
 
     def printImageIterator(self, imgiterator: typing.Iterable[PIL.Image.Image], delay: float=0.01):
         """
@@ -1017,7 +1104,7 @@ class Printer:
         for img in imgiterator:
             self.printImage(img, delay=delay)
 
-    def printQR(self, text: str, delay: float=0.01, resample=PIL.Image.Resampling.NEAREST) -> None:
+    def printQR(self, text: str, delay: float=0.01, resample=PIL.Image.Resampling.NEAREST, compressed: typing.Optional[bool]=None) -> None:
         """
         Generate a QR code from specified string and print it.
 
@@ -1026,6 +1113,8 @@ class Printer:
         * `delay` - delay between printing each row of the image.
         * `resample` - resampling mode of the image, used to automatically
         rescale image to fit the printer width of `Printer.getRowWidth()`.
+        * `compressed` - force/disable the compressed `1f00` image frame.
+        `None` selects it automatically from the printer spec.
         """
 
-        self.printImage(qrcode.make(text, border=0), delay=delay, resample=resample)
+        self.printImage(qrcode.make(text, border=0), delay=delay, resample=resample, compressed=compressed)

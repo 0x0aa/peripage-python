@@ -34,6 +34,7 @@ The author and people associated with him are not responsible for the inoperabil
 * Changing printer serial number
 * Configuring printer poweroff timeout
 * Configuring paper type, paper back-feed and P90 print speed
+* Fast compressed image transfer (`1f00` frame) for A40/A40+
 * Full 16-bit image height in raw image frames
 * Proper end-of-job command (`10fffe45`) so the printer returns to idle
 * Supported printers:
@@ -260,6 +261,26 @@ Newline is required to fush the internal printer buffer and force it to print al
 View this [python notebook](https://github.com/bitrate16/peripage-python/blob/main/notebooks/peripage-tutorial.ipynb) for tutorial
 
 View this [python notebook](https://github.com/bitrate16/peripage-python/blob/main/notebooks/Test-notebook.ipynb) for test
+
+### Fast compressed printing on A40/A40+
+
+`Printer.printImage()` automatically uses the compressed frame for printer
+types whose spec enables it. You can override the choice:
+
+```python
+import peripage
+import PIL.Image
+
+printer = peripage.Printer('00:15:83:15:bc:5f', peripage.PrinterType.A40p)
+printer.connect()
+printer.reset()
+
+printer.printImage(PIL.Image.open('honk.png'), compressed=True)
+printer.disconnect()
+```
+
+A40/A40+ default to `compressed=True`. A6/A6+ keep the raw row-based path. To
+force the old path on a newer printer, pass `compressed=False`.
 
 ## Printer disassembly
 
